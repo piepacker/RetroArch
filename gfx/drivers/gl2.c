@@ -21,6 +21,9 @@
  * Minimum version (mobile) : OpenGLES 2.0+ (2007)
  */
 
+// Jam driver doesn't support multiple context so states must be saved and restored manually
+#define JAM_SAVE_RESTORE_STATE 1
+
 #ifdef _MSC_VER
 #if defined(HAVE_OPENGLES)
 #pragma comment(lib, "libGLESv2")
@@ -2891,6 +2894,12 @@ static bool gl2_frame(void *data, const void *frame,
    bool runloop_is_paused              = video_info->runloop_is_paused;
 #endif
    bool overlay_behind_menu            = video_info->overlay_behind_menu;
+#if JAM_SAVE_RESTORE_STATE
+   int prev_vbo = 0;
+   int prev_vao = 0;
+   glGetIntegerv(GL_ARRAY_BUFFER_BINDING, &prev_vbo);
+   glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &prev_vao);
+#endif
 
    if (!gl)
       return false;
@@ -2898,7 +2907,7 @@ static bool gl2_frame(void *data, const void *frame,
    if (gl->flags & GL2_FLAG_SHARED_CONTEXT_USE)
       gl->ctx_driver->bind_hw_render(gl->ctx_data, false);
 
-#ifndef HAVE_OPENGLES
+#if !defined(HAVE_OPENGLES) || JAM_SAVE_RESTORE_STATE
    if (gl->flags & GL2_FLAG_CORE_CONTEXT_IN_USE)
       glBindVertexArray(chain->vao);
 #endif
@@ -3131,12 +3140,14 @@ static bool gl2_frame(void *data, const void *frame,
       gfx_widgets_frame(video_info);
 #endif
 
+#if !JAM_SAVE_RESTORE_STATE
    if (!string_is_empty(msg))
    {
       if (msg_bgcolor_enable)
          gl2_render_osd_background(gl, msg);
       font_driver_render_msg(gl, msg, NULL, NULL);
    }
+#endif
 
    if (gl->ctx_driver->update_window_title)
       gl->ctx_driver->update_window_title(gl->ctx_data);
@@ -3205,6 +3216,10 @@ static bool gl2_frame(void *data, const void *frame,
 #ifndef HAVE_OPENGLES
    if (gl->flags & GL2_FLAG_CORE_CONTEXT_IN_USE)
       glBindVertexArray(0);
+#endif
+#if JAM_SAVE_RESTORE_STATE
+   glBindVertexArray(prev_vao);
+   glBindBuffer(GL_ARRAY_BUFFER, prev_vbo);
 #endif
    if (gl->flags & GL2_FLAG_SHARED_CONTEXT_USE)
       gl->ctx_driver->bind_hw_render(gl->ctx_data, true);
@@ -3849,8 +3864,8 @@ static void *gl2_init(const video_info_t *video,
 
    gl2_renderchain_restore_default_state(gl);
 
-#ifndef HAVE_OPENGLES
-   if (hwr->context_type == RETRO_HW_CONTEXT_OPENGL_CORE)
+#if !defined(HAVE_OPENGLES) || JAM_SAVE_RESTORE_STATE
+   if (hwr->context_type == RETRO_HW_CONTEXT_OPENGL_CORE || JAM_SAVE_RESTORE_STATE)
    {
       gl2_renderchain_data_t *chain = (gl2_renderchain_data_t*)
          gl->renderchain_data;
